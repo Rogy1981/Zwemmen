@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>ZwemSpots</title>
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#0a7ea4" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="ZwemSpots" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --water: #0a7ea4;
+      --water-dark: #0a2540;
+      --water-light: #e0f4fa;
+      --open: #22c55e;
+      --closed: #ef4444;
+      --text: #1e293b;
+      --muted: #64748b;
+      --radius: 16px;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--water-dark);
+      color: var(--text);
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    header {
+      background: var(--water-dark);
+      color: white;
+      padding: 14px 16px 10px;
+      padding-top: max(14px, env(safe-area-inset-top));
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .logo { display: flex; align-items: center; gap: 8px; }
+    .logo-icon { width: 32px; height: 32px; background: var(--water); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+    .logo h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.5px; }
+    .logo span { color: var(--water); }
+    .icon-btn { background: rgba(255,255,255,0.12); border: none; color: white; width: 38px; height: 38px; border-radius: 50%; cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center; }
+    .icon-btn:active { background: rgba(255,255,255,0.25); }
+
+    .search-bar { background: var(--water-dark); padding: 0 16px 8px; display: flex; gap: 8px; flex-shrink: 0; }
+    .search-input { flex: 1; padding: 9px 14px; border-radius: 12px; border: none; background: rgba(255,255,255,0.12); color: white; font-size: 14px; outline: none; }
+    .search-input::placeholder { color: rgba(255,255,255,0.45); }
+    .search-btn { padding: 9px 14px; border-radius: 12px; border: none; background: var(--water); color: white; font-weight: 700; font-size: 13px; cursor: pointer; }
+
+    .radius-bar { background: var(--water-dark); padding: 0 16px 8px; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+    .radius-bar label { font-size: 12px; color: rgba(255,255,255,0.6); white-space: nowrap; }
+    .radius-bar input[type=range] { flex: 1; accent-color: var(--water); }
+    .radius-val { font-size: 12px; font-weight: 700; color: white; min-width: 40px; text-align: right; }
+
+    .filter-bar { background: var(--water-dark); padding: 0 16px 8px; display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; flex-shrink: 0; }
+    .filter-bar::-webkit-scrollbar { display: none; }
+    .filter-chip { padding: 5px 12px; border: 1.5px solid rgba(255,255,255,0.25); background: transparent; color: rgba(255,255,255,0.7); border-radius: 20px; font-size: 12px; font-weight: 600; white-space: nowrap; cursor: pointer; flex-shrink: 0; }
+    .filter-chip.active { background: var(--water); border-color: var(--water); color: white; }
+
+    .view-toggle { display: flex; background: var(--water-dark); padding: 0 16px 8px; gap: 8px; flex-shrink: 0; }
+    .toggle-btn { flex: 1; padding: 8px; border: none; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer; background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.6); }
+    .toggle-btn.active { background: var(--water); color: white; }
+
+    .result-count { padding: 4px 16px 6px; font-size: 12px; color: rgba(255,255,255,0.55); flex-shrink: 0; background: var(--water-dark); }
+
+    #map { width: 100%; height: 42vh; flex-shrink: 0; transition: height 0.35s; }
+    body.map-mode #map { height: calc(100dvh - 195px); }
+    body.list-mode #map { height: 28vh; }
+
+    .spots-container { flex: 1; overflow-y: auto; background: #f1f5f9; -webkit-overflow-scrolling: touch; }
+    body.map-mode .spots-container { display: none; }
+    .spots-list { padding: 10px; display: flex; flex-direction: column; gap: 10px; }
+
+    .loading-state, .empty-state { display: none; text-align: center; padding: 36px 24px; color: var(--muted); }
+    .loading-state.visible, .empty-state.visible { display: block; }
+    .spinner { width: 34px; height: 34px; border: 3px solid #e2e8f0; border-top-color: var(--water); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 12px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-state p, .empty-state p { font-size: 13px; line-height: 1.6; }
+    .empty-state .emoji { font-size: 36px; margin-bottom: 10px; }
+
+    .spot-card { background: white; border-radius: var(--radius); overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.08); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+    .spot-card:active { opacity: 0.92; }
+
+    .photos-strip { display: grid; grid-template-columns: 2fr 1fr; grid-template-rows: 82px 82px; gap: 2px; height: 166px; background: var(--water-light); }
+    .photo-main { grid-row: 1 / 3; overflow: hidden; position: relative; }
+    .photos-strip img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .photo-side { overflow: hidden; background: var(--water-light); }
+    .type-badge { position: absolute; bottom: 6px; left: 6px; background: rgba(0,0,0,0.55); color: white; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 20px; }
+
+    .spot-info { padding: 11px 13px 13px; }
+    .spot-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+    .spot-name { font-size: 15px; font-weight: 700; color: var(--text); line-height: 1.3; }
+    .status-badge { display: flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; white-space: nowrap; flex-shrink: 0; }
+    .status-badge.open { background: #dcfce7; color: #166534; }
+    .status-badge.closed { background: #fee2e2; color: #991b1b; }
+    .status-badge.season { background: #fef9c3; color: #854d0e; }
+    .status-badge.unknown { background: #f1f5f9; color: #64748b; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .status-badge.open .status-dot { background: var(--open); }
+    .status-badge.closed .status-dot { background: var(--closed); }
+    .status-badge.season .status-dot { background: #eab308; }
+    .status-badge.unknown .status-dot { background: #94a3b8; }
+
+    .spot-meta { display: flex; gap: 10px; margin-top: 5px; flex-wrap: wrap; }
+    .meta-item { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); }
+
+    .kwaliteit-row { margin-top: 8px; display: flex; align-items: center; gap: 6px; }
+    .kwaliteit-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .kwaliteit-text { font-size: 12px; color: var(--muted); }
+
+    .hours-row { margin-top: 9px; padding-top: 9px; border-top: 1px solid #f1f5f9; display: flex; align-items: center; gap: 6px; }
+    .hours-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); min-width: 48px; }
+    .hours-today { font-size: 13px; font-weight: 600; color: var(--text); }
+    .hours-expand { margin-left: auto; background: none; border: none; color: var(--water); font-size: 12px; font-weight: 600; cursor: pointer; }
+    .hours-full { display: none; margin-top: 8px; background: #f8fafc; border-radius: 10px; overflow: hidden; }
+    .hours-full.visible { display: block; }
+    .hours-full table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .hours-full td { padding: 6px 10px; border-bottom: 1px solid #f1f5f9; }
+    .hours-full tr:last-child td { border-bottom: none; }
+    .hours-full td:first-child { font-weight: 600; color: var(--muted); }
+    .hours-full td:last-child { text-align: right; color: var(--text); }
+    .hours-full tr.today td { background: var(--water-light); }
+    .hours-full tr.today td:first-child { color: var(--water); }
+
+    .marker-pin { width: 26px; height: 26px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
+    .marker-pin.open { background: var(--open); }
+    .marker-pin.closed { background: var(--closed); }
+    .marker-pin.season { background: #eab308; }
+    .marker-pin.unknown { background: #94a3b8; }
+    .marker-pin.pool { background: #3b82f6; }
+
+    .leaflet-popup-content-wrapper { border-radius: 12px; padding: 0; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,0.15); }
+    .leaflet-popup-content { margin: 0; }
+    .popup-inner { padding: 10px 13px; min-width: 160px; }
+    .popup-name { font-weight: 700; font-size: 13px; margin-bottom: 2px; color: var(--text); }
+    .popup-sub { font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+    .popup-status { font-size: 12px; font-weight: 600; }
+    .popup-status.open { color: #166534; }
+    .popup-status.closed { color: #991b1b; }
+    .popup-status.season { color: #854d0e; }
+    .popup-status.unknown { color: #64748b; }
+  </style>
+</head>
+<body>
+<header>
+  <div class="logo">
+    <div class="logo-icon">🏊</div>
+    <h1>Zwem<span>Spots</span></h1>
+  </div>
+  <button class="icon-btn" id="locateBtn">📍</button>
+</header>
+
+<div class="search-bar">
+  <input class="search-input" type="text" id="searchInput" placeholder="Zoek stad of postcode…" />
+  <button class="search-btn" id="searchBtn">Zoek</button>
+</div>
+
+<div class="radius-bar">
+  <label>Straal</label>
+  <input type="range" id="radiusSlider" min="1" max="50" value="15" step="1" />
+  <span class="radius-val" id="radiusVal">15 km</span>
+</div>
+
+<div class="filter-bar">
+  <button class="filter-chip active" data-filter="all">Alles</button>
+  <button class="filter-chip" data-filter="zwembad">🏛 Zwembad</button>
+  <button class="filter-chip" data-filter="zwemwater">🏞 Zwemwater</button>
+  <button class="filter-chip" data-filter="open">✅ Nu open</button>
+  <button class="filter-chip" data-filter="goed">💚 Goede kwaliteit</button>
+</div>
+
+<div class="result-count" id="resultCount"></div>
+
+<div class="view-toggle">
+  <button class="toggle-btn" id="btnMap">🗺 Kaart</button>
+  <button class="toggle-btn active" id="btnList">☰ Lijst</button>
+</div>
+
+<main>
+  <div id="map"></div>
+  <div class="spots-container">
+    <div class="spots-list" id="spotsList">
+      <div class="loading-state visible" id="loadingState">
+        <div class="spinner"></div>
+        <p>Locatie bepalen en data ophalen…</p>
+      </div>
+      <div class="empty-state" id="emptyState">
+        <div class="emoji">🏊</div>
+        <p>Geen zwemplekken gevonden.<br>Probeer een grotere straal of andere locatie.</p>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+// ── CONFIG ──────────────────────────────────────────────────────────────────
+const ZWR_WFS = 'https://ogcgeo.zwemwater.nl/geoserver/zwr-wfs/wfs';
+const DAY_SHORT = ['zo','ma','di','wo','do','vr','za'];
+const DAY_FULL  = {ma:'Maandag',di:'Dinsdag',wo:'Woensdag',do:'Donderdag',vr:'Vrijdag',za:'Zaterdag',zo:'Zondag'};
+
+// Foto's per type (Unsplash)
+const PHOTOS = {
+  zwemwater: [
+    'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=600&q=80',
+    'https://images.unsplash.com/photo-1519046904884-53103b34b206?w=300&q=80',
+    'https://images.unsplash.com/photo-1520942702018-0862200e6873?w=300&q=80',
+    'https://images.unsplash.com/photo-1533174072545-7a4b6ad7a6c3?w=300&q=80',
+  ],
+  zwembad: [
+    'https://images.unsplash.com/photo-1575429198097-0414ec08e8cd?w=600&q=80',
+    'https://images.unsplash.com/photo-1519315901367-f34ff9154487?w=300&q=80',
+    'https://images.unsplash.com/photo-1526958097901-5e6d742d3371?w=300&q=80',
+    'https://images.unsplash.com/photo-1571902943202-507ec2618e8f?w=300&q=80',
+  ],
+};
+
+// Seizoen: zwemwater is open 1 mei – 1 oktober
+const now = new Date();
+const isSeizoen = now.getMonth() >= 4 && now.getMonth() < 9; // mei t/m sept
+
+// Kwaliteitskleuren
+const KWAL_COLOR = { 'uitstekend': '#22c55e', 'goed': '#84cc16', 'aanvaardbaar': '#eab308', 'slecht': '#ef4444', 'onbekend': '#94a3b8' };
+const KWAL_LABEL = { 'uitstekend': '💚 Uitstekende waterkwaliteit', 'goed': '🟢 Goede waterkwaliteit', 'aanvaardbaar': '🟡 Aanvaardbare waterkwaliteit', 'slecht': '🔴 Slechte waterkwaliteit', 'onbekend': '⚪ Kwaliteit onbekend' };
+
+// ── STATE ────────────────────────────────────────────────────────────────────
+let userLat = 52.1551, userLng = 5.3877; // Utrecht default
+let radiusKm = 15;
+let activeFilter = 'all';
+let allSpots = [];
+let markerLayer = null;
+
+// ── MAP ──────────────────────────────────────────────────────────────────────
+const map = L.map('map', { zoomControl: false, attributionControl: false }).setView([userLat, userLng], 10);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(map);
+L.control.attribution({ prefix: false, position: 'bottomright' })
+  .addAttribution('© <a href="https://carto.com">CARTO</a> © <a href="https://www.openstreetmap.org/copyright">OSM</a> · Zwemwater: <a href="https://www.zwemwater.nl">zwemwater.nl</a>')
+  .addTo(map);
+L.control.zoom({ position: 'topright' }).addTo(map);
+
+let userMarker = null;
+function showUser(lat, lng) {
+  if (userMarker) userMarker.remove();
+  userMarker = L.circleMarker([lat, lng], {
+    radius: 8, fillColor: '#3b82f6', fillOpacity: 1, color: 'white', weight: 2.5
+  }).addTo(map).bindTooltip('Jouw locatie');
+  L.circle([lat, lng], {
+    radius: radiusKm * 1000,
+    color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.05,
+    weight: 1.5, dashArray: '4 4'
+  }).addTo(map);
+}
+
+// ── HELPERS ──────────────────────────────────────────────────────────────────
+function haversine(lat1, lng1, lat2, lng2) {
+  const R = 6371, dLat = (lat2-lat1)*Math.PI/180, dLng = (lng2-lng1)*Math.PI/180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function fmtDist(km) { return km < 1 ? Math.round(km*1000)+' m' : km.toFixed(1)+' km'; }
+
+// RD → WGS84 (Rijksdriehoek naar lat/lng)
+function rd2wgs(x, y) {
+  const dX = (x - 155000) / 100000;
+  const dY = (y - 463000) / 100000;
+  const SumN = (3235.65389*dY) + (-32.58297*dX**2) + (-0.24750*dY**2) + (-0.84978*dX**2*dY) + (-0.06550*dY**3) + (-0.01709*dX**2*dY**2) + (-0.00738*dX) + (0.00530*dX**4) + (-0.00039*dX**2*dY**3) + (0.00033*dX**4*dY) + (-0.00012*dX*dY);
+  const SumE = (5260.52916*dX) + (105.94684*dX*dY) + (2.45656*dX*dY**2) + (-0.81885*dX**3) + (0.05594*dX*dY**3) + (-0.05607*dX**3*dY) + (0.01199*dY) + (-0.00256*dX**3*dY**2) + (0.00128*dX*dY**4) + (0.00022*dY**2) + (-0.00022*dX**2) + (0.00026*dX**5);
+  return { lat: 52.15517440 + SumN/3600, lng: 5.38720621 + SumE/3600 };
+}
+
+function parseCoords(geom) {
+  if (!geom) return null;
+  if (geom.type === 'Point') {
+    const [x, y] = geom.coordinates;
+    // Als RD-coördinaten (x > 7000 = zeker RD)
+    if (Math.abs(x) > 7000) return rd2wgs(x, y);
+    return { lat: y, lng: x };
+  }
+  if (geom.type === 'MultiPolygon' || geom.type === 'Polygon') {
+    const coords = geom.type === 'Polygon' ? geom.coordinates[0] : geom.coordinates[0][0];
+    const lats = coords.map(c => c[1]), lngs = coords.map(c => c[0]);
+    const cx = (Math.min(...lngs) + Math.max(...lngs)) / 2;
+    const cy = (Math.min(...lats) + Math.max(...lats)) / 2;
+    if (Math.abs(cx) > 7000) return rd2wgs(cx, cy);
+    return { lat: cy, lng: cx };
+  }
+  return null;
+}
+
+function normKwaliteit(str) {
+  if (!str) return 'onbekend';
+  const s = str.toLowerCase();
+  if (s.includes('uitstekend')) return 'uitstekend';
+  if (s.includes('goed')) return 'goed';
+  if (s.includes('aanvaardbaar')) return 'aanvaardbaar';
+  if (s.includes('slecht') || s.includes('negatief')) return 'slecht';
+  return 'onbekend';
+}
+
+function getStatusZwemwater() {
+  if (!isSeizoen) return 'closed';
+  return 'season'; // open in seizoen, maar geen exacte tijden
+}
+
+// ── ZWEMWATER.NL WFS ─────────────────────────────────────────────────────────
+async function fetchZwemwater(lat, lng, radiusM) {
+  // Bounding box in WGS84 rondom gebruiker
+  const deg = radiusM / 111000;
+  const bbox = `${lng-deg},${lat-deg},${lng+deg},${lat+deg}`;
+
+  const params = new URLSearchParams({
+    service: 'WFS',
+    version: '2.0.0',
+    request: 'GetFeature',
+    typeName: 'zwr-wfs:zwemplek',
+    outputFormat: 'application/json',
+    srsName: 'EPSG:4326',
+    bbox: `${bbox},EPSG:4326`,
+    count: '200'
+  });
+
+  const resp = await fetch(`${ZWR_WFS}?${params}`);
+  if (!resp.ok) throw new Error('Zwemwater API fout');
+  const data = await resp.json();
+
+  return (data.features || []).map(f => {
+    const p = f.properties || {};
+    const coords = parseCoords(f.geometry);
+    if (!coords) return null;
+
+    const dist = haversine(lat, lng, coords.lat, coords.lng);
+    if (dist > radiusM / 1000) return null;
+
+    const kwal = normKwaliteit(p.zwemwaterkwaliteitsoordeel || p.kwaliteitsoordeel || p.classificatie || '');
+
+    return {
+      id: 'zwr-' + (f.id || Math.random()),
+      name: p.naam || p.zwemplek || p.zwemwaterlocatie || 'Zwemplek',
+      type: 'zwemwater',
+      lat: coords.lat,
+      lng: coords.lng,
+      address: [p.straat, p.huisnummer, p.gemeente || p.plaats].filter(Boolean).join(' ') || null,
+      gemeente: p.gemeente || p.beheerder || null,
+      kwaliteit: kwal,
+      maatregel: p.maatregel || p.status || null,
+      photos: PHOTOS.zwemwater,
+      hours: null, // zwemwater heeft geen exacte tijden
+      distRaw: dist,
+      distance: fmtDist(dist),
+      website: p.website || 'https://www.zwemwater.nl',
+    };
+  }).filter(Boolean).sort((a,b) => a.distRaw - b.distRaw);
+}
+
+// ── OVERPASS voor zwembaden ──────────────────────────────────────────────────
+async function fetchZwembaden(lat, lng, radiusM) {
+  const query = `
+[out:json][timeout:20];
+(
+  node["leisure"="swimming_pool"]["name"]["access"!="private"]["access"!="no"](around:${radiusM},${lat},${lng});
+  way["leisure"="swimming_pool"]["name"]["access"!="private"]["access"!="no"](around:${radiusM},${lat},${lng});
+);
+out center tags;`.trim();
+
+  const resp = await fetch('https://overpass-api.de/api/interpreter', {
+    method: 'POST',
+    body: 'data=' + encodeURIComponent(query)
+  });
+  if (!resp.ok) throw new Error('Overpass fout');
+  const data = await resp.json();
+
+  return (data.elements || []).map(el => {
+    const tags = el.tags || {};
+    const lat2 = el.lat ?? el.center?.lat;
+    const lng2 = el.lon ?? el.center?.lon;
+    if (!lat2 || !lng2) return null;
+
+    const dist = haversine(lat, lng, lat2, lng2);
+    const hours = parseOSMHours(tags.opening_hours);
+
+    return {
+      id: 'osm-' + el.type + el.id,
+      name: tags.name || tags['name:nl'] || 'Zwembad',
+      type: 'zwembad',
+      lat: lat2, lng: lng2,
+      address: [tags['addr:street'], tags['addr:housenumber'], tags['addr:city']].filter(Boolean).join(' ') || null,
+      gemeente: tags['addr:city'] || null,
+      kwaliteit: null,
+      maatregel: null,
+      photos: PHOTOS.zwembad,
+      hours,
+      distRaw: dist,
+      distance: fmtDist(dist),
+      website: tags.website || null,
+    };
+  }).filter(Boolean).sort((a,b) => a.distRaw - b.distRaw);
+}
+
+function parseOSMHours(ohStr) {
+  if (!ohStr) return null;
+  const result = {};
+  if (ohStr.trim() === '24/7') {
+    ['ma','di','wo','do','vr','za','zo'].forEach(d => result[d] = '00:00–24:00');
+    return result;
+  }
+  const parts = ohStr.split(';').map(s => s.trim()).filter(Boolean);
+  const dayMap = {Mo:'ma',Tu:'di',We:'wo',Th:'do',Fr:'vr',Sa:'za',Su:'zo'};
+  const allOSM = ['Mo','Tu','We','Th','Fr','Sa','Su'];
+  parts.forEach(part => {
+    const m = part.match(/^([A-Za-z,\-]+)\s+([\d:]+)-([\d:]+)$/);
+    if (!m) return;
+    const dayPart = m[1], timeStr = m[2] + '–' + m[3];
+    const range = dayPart.match(/^([A-Za-z]+)-([A-Za-z]+)$/);
+    if (range) {
+      const s = allOSM.indexOf(range[1]), e = allOSM.indexOf(range[2]);
+      if (s>=0 && e>=0) for (let i=s;i<=e;i++) { const k=dayMap[allOSM[i]]; if(k) result[k]=timeStr; }
+    } else {
+      dayPart.split(',').forEach(d => { const k=dayMap[d.trim()]; if(k) result[k]=timeStr; });
+    }
+  });
+  return Object.keys(result).length ? result : null;
+}
+
+function isOpenNow(spot) {
+  if (spot.type === 'zwemwater') {
+    if (!isSeizoen) return false;
+    if (spot.kwaliteit === 'slecht') return false;
+    if (spot.maatregel && spot.maatregel.toLowerCase().includes('negatief')) return false;
+    return true; // seizoen, geen verbod → open
+  }
+  if (!spot.hours) return null;
+  const dayKey = DAY_SHORT[now.getDay()];
+  const today = spot.hours[dayKey];
+  if (!today || today === 'Gesloten') return false;
+  if (today.includes('00:00–24:00')) return true;
+  const m = today.match(/(\d+):(\d+)\s*[–-]\s*(\d+):(\d+)/);
+  if (!m) return null;
+  const open = parseInt(m[1])*60+parseInt(m[2]), close = parseInt(m[3])*60+parseInt(m[4]);
+  const cur = now.getHours()*60+now.getMinutes();
+  return cur >= open && cur < close;
+}
+
+function getTodayHours(spot) {
+  if (spot.type === 'zwemwater') {
+    if (!isSeizoen) return 'Buiten seizoen (okt–apr)';
+    if (spot.maatregel && spot.maatregel.toLowerCase().includes('negatief')) return 'Negatief zwemadvies';
+    return 'Seizoen open (mei–sep)';
+  }
+  if (!spot.hours) return 'Onbekend';
+  const dayKey = DAY_SHORT[now.getDay()];
+  return spot.hours[dayKey] || 'Gesloten';
+}
+
+function buildHoursTable(spot) {
+  if (spot.type === 'zwemwater') {
+    return `<tr><td colspan="2" style="text-align:center;padding:10px;color:#64748b">
+      Zwemwater is open tijdens het zwemseizoen (1 mei – 1 oktober).<br>Controleer <a href="${spot.website}" target="_blank" style="color:#0a7ea4">zwemwater.nl</a> voor actuele info.
+    </td></tr>`;
+  }
+  if (!spot.hours) return '<tr><td colspan="2" style="text-align:center;color:#94a3b8;padding:10px">Geen openingstijden bekend</td></tr>';
+  const todayKey = DAY_SHORT[now.getDay()];
+  return ['ma','di','wo','do','vr','za','zo'].map(k => `
+    <tr class="${k===todayKey?'today':''}">
+      <td>${DAY_FULL[k]}</td>
+      <td>${spot.hours[k]||'Gesloten'}</td>
+    </tr>`).join('');
+}
+
+// ── RENDER MARKERS ───────────────────────────────────────────────────────────
+function statusCls(spot) {
+  const open = isOpenNow(spot);
+  if (spot.type === 'zwembad') return open === true ? 'open' : open === false ? 'closed' : 'unknown';
+  if (!isSeizoen) return 'closed';
+  if (spot.kwaliteit === 'slecht') return 'closed';
+  return 'season';
+}
+
+function renderMarkers(spots) {
+  if (markerLayer) markerLayer.clearLayers();
+  markerLayer = L.layerGroup().addTo(map);
+  spots.forEach(spot => {
+    const cls = spot.type === 'zwembad' ? (isOpenNow(spot) === true ? 'open' : isOpenNow(spot) === false ? 'closed' : 'unknown') : statusCls(spot);
+    const poolCls = spot.type === 'zwembad' ? 'pool' : cls;
+    const icon = L.divIcon({ html: `<div class="marker-pin ${poolCls}"></div>`, className: '', iconSize:[26,26], iconAnchor:[13,26], popupAnchor:[0,-28] });
+    const statusText = cls === 'open' ? '● Nu open' : cls === 'closed' ? '● Gesloten' : cls === 'season' ? '● Zwemseizoen' : '● Onbekend';
+    L.marker([spot.lat, spot.lng], { icon }).addTo(markerLayer).bindPopup(`
+      <div class="popup-inner">
+        <div class="popup-name">${spot.name}</div>
+        <div class="popup-sub">${spot.type === 'zwembad' ? '🏛 Zwembad' : '🏞 Zwemwater'} · ${spot.distance}</div>
+        <div class="popup-status ${cls}">${statusText}</div>
+        ${spot.kwaliteit && spot.type==='zwemwater' ? `<div style="font-size:11px;color:#64748b;margin-top:2px">${KWAL_LABEL[spot.kwaliteit]||''}</div>` : ''}
+      </div>`);
+  });
+}
+
+// ── RENDER CARDS ─────────────────────────────────────────────────────────────
+function renderCards() {
+  const list = document.getElementById('spotsList');
+  const empty = document.getElementById('emptyState');
+  const loading = document.getElementById('loadingState');
+  loading.classList.remove('visible');
+  list.querySelectorAll('.spot-card').forEach(el => el.remove());
+
+  let filtered = allSpots.filter(s => {
+    if (activeFilter === 'all') return true;
+    if (activeFilter === 'zwembad') return s.type === 'zwembad';
+    if (activeFilter === 'zwemwater') return s.type === 'zwemwater';
+    if (activeFilter === 'open') return isOpenNow(s) === true || (s.type==='zwemwater' && isSeizoen && s.kwaliteit !== 'slecht');
+    if (activeFilter === 'goed') return s.kwaliteit === 'goed' || s.kwaliteit === 'uitstekend';
+    return true;
+  });
+
+  document.getElementById('resultCount').textContent = filtered.length ? `${filtered.length} locaties gevonden` : '';
+
+  if (!filtered.length) { empty.classList.add('visible'); return; }
+  empty.classList.remove('visible');
+  renderMarkers(filtered);
+
+  filtered.forEach(spot => {
+    const cls = statusCls(spot);
+    const open = isOpenNow(spot);
+    const statusText = spot.type==='zwemwater'
+      ? (isSeizoen && spot.kwaliteit!=='slecht' ? 'Open' : !isSeizoen ? 'Buiten seizoen' : 'Verbod')
+      : (open===true ? 'Open' : open===false ? 'Gesloten' : 'Onbekend');
+    const badgeCls = spot.type==='zwemwater'
+      ? (isSeizoen && spot.kwaliteit!=='slecht' ? 'season' : 'closed')
+      : (open===true ? 'open' : open===false ? 'closed' : 'unknown');
+
+    const card = document.createElement('div');
+    card.className = 'spot-card';
+    card.innerHTML = `
+      <div class="photos-strip">
+        <div class="photo-main">
+          <img src="${spot.photos[0]}" alt="${spot.name}" loading="lazy" />
+          <span class="type-badge">${spot.type==='zwembad' ? '🏛 Zwembad' : '🏞 Zwemwater'}</span>
+        </div>
+        <div class="photo-side"><img src="${spot.photos[1]}" alt="" loading="lazy" /></div>
+        <div class="photo-side"><img src="${spot.photos[2]}" alt="" loading="lazy" /></div>
+      </div>
+      <div class="spot-info">
+        <div class="spot-header">
+          <div class="spot-name">${spot.name}</div>
+          <div class="status-badge ${badgeCls}">
+            <span class="status-dot"></span>${statusText}
+          </div>
+        </div>
+        <div class="spot-meta">
+          <span class="meta-item">📍 ${spot.distance}</span>
+          ${spot.gemeente ? `<span class="meta-item">🏘 ${spot.gemeente}</span>` : ''}
+        </div>
+        ${spot.type==='zwemwater' && spot.kwaliteit ? `
+        <div class="kwaliteit-row">
+          <div class="kwaliteit-dot" style="background:${KWAL_COLOR[spot.kwaliteit]||'#94a3b8'}"></div>
+          <span class="kwaliteit-text">${KWAL_LABEL[spot.kwaliteit]||''}</span>
+        </div>` : ''}
+        <div class="hours-row">
+          <span class="hours-label">Vandaag</span>
+          <span class="hours-today">${getTodayHours(spot)}</span>
+          <button class="hours-expand" data-id="${spot.id}">Info ▾</button>
+        </div>
+        <div class="hours-full" id="hours-${spot.id}">
+          <table>${buildHoursTable(spot)}</table>
+        </div>
+      </div>`;
+
+    card.addEventListener('click', e => {
+      if (e.target.closest('.hours-expand')) return;
+      map.flyTo([spot.lat, spot.lng], 15, { animate: true, duration: 0.8 });
+      document.body.classList.remove('map-mode','list-mode');
+      document.getElementById('btnList').classList.add('active');
+      document.getElementById('btnMap').classList.remove('active');
+      setTimeout(() => map.invalidateSize(), 350);
+    });
+    list.appendChild(card);
+  });
+
+  document.querySelectorAll('.hours-expand').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const el = document.getElementById('hours-' + btn.dataset.id);
+      el.classList.toggle('visible');
+      btn.textContent = el.classList.contains('visible') ? 'Verbergen ▴' : 'Info ▾';
+    });
+  });
+}
+
+// ── LOAD ─────────────────────────────────────────────────────────────────────
+async function loadAll() {
+  document.getElementById('loadingState').classList.add('visible');
+  document.getElementById('emptyState').classList.remove('visible');
+  document.getElementById('resultCount').textContent = '';
+  document.querySelectorAll('.spot-card').forEach(el => el.remove());
+
+  try {
+    const [zwemwater, zwembaden] = await Promise.all([
+      fetchZwemwater(userLat, userLng, radiusKm * 1000).catch(() => []),
+      fetchZwembaden(userLat, userLng, radiusKm * 1000).catch(() => []),
+    ]);
+
+    // Dedupliceer op naam + afstand
+    const seen = new Set();
+    allSpots = [...zwemwater, ...zwembaden]
+      .filter(s => {
+        const key = s.name.toLowerCase().trim();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .sort((a, b) => a.distRaw - b.distRaw);
+
+    renderCards();
+  } catch (err) {
+    document.getElementById('loadingState').classList.remove('visible');
+    document.getElementById('emptyState').classList.add('visible');
+    document.getElementById('emptyState').innerHTML = `<div class="emoji">⚠️</div><p>Kon data niet ophalen.<br>Controleer je verbinding.</p>`;
+    console.error(err);
+  }
+}
+
+// ── GEOCODE ──────────────────────────────────────────────────────────────────
+async function geocode(q) {
+  const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q+', Nederland')}&format=json&limit=1&countrycodes=nl`;
+  const r = await fetch(url, { headers: { 'Accept-Language': 'nl' } });
+  const d = await r.json();
+  if (!d.length) return null;
+  return { lat: parseFloat(d[0].lat), lng: parseFloat(d[0].lon) };
+}
+
+// ── UI EVENTS ────────────────────────────────────────────────────────────────
+document.getElementById('radiusSlider').addEventListener('input', e => {
+  radiusKm = parseInt(e.target.value);
+  document.getElementById('radiusVal').textContent = radiusKm + ' km';
+});
+document.getElementById('radiusSlider').addEventListener('change', () => { showUser(userLat,userLng); loadAll(); });
+
+document.getElementById('searchBtn').addEventListener('click', async () => {
+  const q = document.getElementById('searchInput').value.trim();
+  if (!q) return;
+  const r = await geocode(q);
+  if (!r) { alert('Locatie niet gevonden.'); return; }
+  userLat = r.lat; userLng = r.lng;
+  map.setView([userLat, userLng], 12);
+  showUser(userLat, userLng);
+  loadAll();
+});
+document.getElementById('searchInput').addEventListener('keydown', e => { if (e.key==='Enter') document.getElementById('searchBtn').click(); });
+
+document.getElementById('locateBtn').addEventListener('click', () => {
+  if (!navigator.geolocation) return;
+  navigator.geolocation.getCurrentPosition(pos => {
+    userLat = pos.coords.latitude; userLng = pos.coords.longitude;
+    map.flyTo([userLat, userLng], 12, { duration: 1 });
+    showUser(userLat, userLng);
+    loadAll();
+  });
+});
+
+document.querySelectorAll('.filter-chip').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.filter-chip').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    activeFilter = btn.dataset.filter;
+    renderCards();
+  });
+});
+
+const btnMap = document.getElementById('btnMap'), btnList = document.getElementById('btnList');
+btnMap.addEventListener('click', () => {
+  document.body.classList.add('map-mode'); document.body.classList.remove('list-mode');
+  btnMap.classList.add('active'); btnList.classList.remove('active');
+  setTimeout(() => map.invalidateSize(), 350);
+});
+btnList.addEventListener('click', () => {
+  document.body.classList.remove('map-mode','list-mode');
+  btnMap.classList.remove('active'); btnList.classList.add('active');
+  setTimeout(() => map.invalidateSize(), 350);
+});
+
+// ── INIT ─────────────────────────────────────────────────────────────────────
+if (navigator.geolocation) {
+  navigator.geolocation.getCurrentPosition(pos => {
+    userLat = pos.coords.latitude; userLng = pos.coords.longitude;
+    map.setView([userLat, userLng], 12);
+    showUser(userLat, userLng);
+    loadAll();
+  }, () => { showUser(userLat, userLng); loadAll(); });
+} else {
+  showUser(userLat, userLng); loadAll();
+}
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(()=>{});
+</script>
+</body>
+</html>
